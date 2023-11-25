@@ -151,11 +151,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1671426600,
-        "narHash": "sha256-MahAFyp6AxY0H61U6zqJXM1NsckNNkK6iqONEtOPSK0=",
+        "lastModified": 1700576772,
+        "narHash": "sha256-vF4iASdxAWpv0cwpO3/2aOcH0Y4L+UgceE69eSoIjak=",
         "owner": "ihaskell",
         "repo": "ihaskell",
-        "rev": "1c22a874ac0c8ed019229f4a0cd5a0bfda017357",
+        "rev": "641e7b9ecc21130847253581e9551eedbd3f1723",
         "type": "github"
       },
       "original": {

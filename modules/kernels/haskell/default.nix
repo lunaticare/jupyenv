@@ -1,74 +1,60 @@
-{
-  self,
-  system,
-  config,
-  lib,
-  mkKernel,
-  ...
-}: let
+{ self, system, config, lib, mkKernel, ... }:
+let
   inherit (lib) types;
 
   kernelName = "haskell";
-  kernelOptions = {
-    config,
-    name,
-    ...
-  }: let
-    requiredRuntimePackages = [
-      config.nixpkgs.haskell.compiler.${config.haskellCompiler}
-    ];
-    args = {inherit self system lib config name kernelName requiredRuntimePackages;};
-    kernelModule = import ./../../kernel.nix args;
-    kernelFunc = {
-      self,
-      system,
-      pkgs ? self.inputs.nixpkgs.legacyPackages.${system},
-      name ? "haskell",
-      displayName ? "Haskell",
-      requiredRuntimePackages ? [pkgs.haskell.compiler.${haskellCompiler}],
-      runtimePackages ? [],
-      haskellKernelPkg ? import "${self.inputs.ihaskell}/release.nix",
-      haskellCompiler ? "ghc902",
-      extraHaskellFlags ? "-M3g -N2",
-      extraHaskellPackages ? (_: []),
-    }: let
-      allRuntimePackages = requiredRuntimePackages ++ runtimePackages;
-
-      env = haskellKernelPkg {
-        compiler = haskellCompiler;
-        nixpkgs = pkgs;
-        packages = extraHaskellPackages;
+  kernelOptions = { config, name, ... }:
+    let
+      requiredRuntimePackages =
+        [ config.nixpkgs.haskell.compiler.${config.haskellCompiler} ];
+      args = {
+        inherit self system lib config name kernelName requiredRuntimePackages;
       };
+      kernelModule = import ./../../kernel.nix args;
+      kernelFunc = { self, system
+        , pkgs ? self.inputs.nixpkgs.legacyPackages.${system}, name ? "haskell"
+        , displayName ? "Haskell"
+        , requiredRuntimePackages ? [ pkgs.haskell.compiler.${haskellCompiler} ]
+        , runtimePackages ? [ ], haskellKernelPkg ?
+          import "${self.inputs.ihaskell}/${config.ihaskellReleaseFilePath}"
+        , haskellCompiler ? "ghc902", extraHaskellFlags ? "-M3g -N2"
+        , extraHaskellPackages ? (_: [ ]), }:
+        let
+          allRuntimePackages = requiredRuntimePackages ++ runtimePackages;
 
-      kernelspec = let
-        ihaskellGhcLib = env.ihaskellGhcLibFunc env.ihaskellExe env.ihaskellEnv;
-        wrappedEnv =
-          pkgs.runCommand "wrapper-${ihaskellGhcLib.name}"
-          {nativeBuildInputs = [pkgs.makeWrapper];}
-          ''
-            mkdir -p $out/bin
-            for i in ${ihaskellGhcLib}/bin/*; do
-              filename=$(basename $i)
-              ln -s ${ihaskellGhcLib}/bin/$filename $out/bin/$filename
-              wrapProgram $out/bin/$filename \
-                --set PATH "${pkgs.lib.makeSearchPath "bin" allRuntimePackages}"
-            done
-          '';
-      in
-        env.ihaskellKernelFileFunc
-        wrappedEnv
-        extraHaskellFlags;
+          env = haskellKernelPkg {
+            compiler = haskellCompiler;
+            nixpkgs = pkgs;
+            packages = extraHaskellPackages;
+          };
+
+          kernelspec = let
+            ihaskellGhcLib =
+              env.ihaskellGhcLibFunc env.ihaskellExe env.ihaskellEnv;
+            wrappedEnv = pkgs.runCommand "wrapper-${ihaskellGhcLib.name}" {
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+            } ''
+              mkdir -p $out/bin
+              for i in ${ihaskellGhcLib}/bin/*; do
+                filename=$(basename $i)
+                ln -s ${ihaskellGhcLib}/bin/$filename $out/bin/$filename
+                wrapProgram $out/bin/$filename \
+                  --set PATH "${
+                    pkgs.lib.makeSearchPath "bin" allRuntimePackages
+                  }"
+              done
+            '';
+          in env.ihaskellKernelFileFunc wrappedEnv extraHaskellFlags;
+        in {
+          inherit name displayName;
+          language = "haskell";
+          # See https://github.com/IHaskell/IHaskell/pull/1191
+          argv = kernelspec.argv ++ [ "--codemirror" "Haskell" ];
+          codemirrorMode = "Haskell";
+          logo64 = ./logo64.png;
+        };
     in {
-      inherit name displayName;
-      language = "haskell";
-      # See https://github.com/IHaskell/IHaskell/pull/1191
-      argv = kernelspec.argv ++ ["--codemirror" "Haskell"];
-      codemirrorMode = "Haskell";
-      logo64 = ./logo64.png;
-    };
-  in {
-    options =
-      {
+      options = {
         ihaskell = lib.mkOption {
           type = types.path;
           default = self.inputs.ihaskell;
@@ -76,6 +62,16 @@
           example = lib.literalExpression "self.inputs.ihaskell";
           description = lib.mdDoc ''
             ihaskell flake input to be used for this ${kernelName} kernel.
+          '';
+        };
+
+        ihaskellReleaseFilePath = lib.mkOption {
+          type = types.str;
+          default = "release.nix";
+          defaultText = lib.literalExpression "release.nix";
+          example = lib.literalExpression "release-9.6.nix";
+          description = lib.mdDoc ''
+            Path to release-*.nix file with a custom GHC version for this ${kernelName} kernel.
           '';
         };
 
@@ -99,30 +95,28 @@
 
         extraHaskellPackages = lib.mkOption {
           type = types.functionTo (types.listOf types.package);
-          default = _: [];
+          default = _: [ ];
           defaultText = lib.literalExpression "ps: []";
           example = lib.literalExpression "ps: [ps.lens ps.vector]";
           description = lib.mdDoc ''
             extra haskell packages
           '';
         };
-      }
-      // kernelModule.options;
+      } // kernelModule.options;
 
-    config = lib.mkIf config.enable {
-      build = mkKernel (kernelFunc config.kernelArgs);
-      kernelArgs =
-        {
+      config = lib.mkIf config.enable {
+        build = mkKernel (kernelFunc config.kernelArgs);
+        kernelArgs = {
           inherit (config) extraHaskellFlags extraHaskellPackages;
-          haskellKernelPkg = import "${config.ihaskell}/release.nix";
-        }
-        // kernelModule.kernelArgs;
+          haskellKernelPkg =
+            import "${config.ihaskell}/${config.ihaskellReleaseFilePath}";
+        } // kernelModule.kernelArgs;
+      };
     };
-  };
 in {
   options.kernel.${kernelName} = lib.mkOption {
     type = types.attrsOf (types.submodule kernelOptions);
-    default = {};
+    default = { };
     example = lib.literalExpression ''
       {
         kernel.${kernelName}."example".enable = true;
